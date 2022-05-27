@@ -8,6 +8,10 @@ type User = {
   ref: {
     id: string;
   };
+
+  data: {
+    stripe_customer_id: string;
+  };
 };
 
 export default async function handle(
@@ -21,20 +25,24 @@ export default async function handle(
       q.Get(q.Match(q.Index("user_by_email"), q.Casefold(session.user.email)))
     );
 
-    const stripeCustomer = await stripe.customers.create({
-      email: session.user.email,
-    });
+    let customerId = user.data.stripe_customer_id;
 
-    await fauna.query(
-      q.Update(q.Ref(q.Collection("user"), user.ref.id), {
-        data: {
-          stripe_customer_id: stripeCustomer.id,
-        },
-      })
-    );
+    if (!customerId) {
+      const stripeCustomer = await stripe.customers.create({
+        email: session.user.email,
+      });
+      await fauna.query(
+        q.Update(q.Ref(q.Collection("users"), user.ref.id), {
+          data: {
+            stripe_customer_id: stripeCustomer.id,
+          },
+        })
+      );
+      customerId = stripeCustomer.id;
+    }
 
     const stripeCheckoutSession = await stripe.checkout.sessions.create({
-      customer: stripeCustomer.id,
+      customer: customerId,
       payment_method_types: ["card"],
       billing_address_collection: "required",
       line_items: [{ price: "price_1KxsQ4A4bubj5fzXNANgIyHe", quantity: 1 }],
